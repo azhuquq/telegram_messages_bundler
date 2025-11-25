@@ -1,0 +1,21 @@
+name = "your_bot_username"
+main = "src/index.ts"
+compatibility_date = "2024-11-18"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Bot username without @ (e.g., "your_bot")
+BOT_USERNAME = "your_bot_username"
+
+# Create KV namespace with: npx wrangler kv:namespace create BUNDLES
+# Then update the id and preview_id below
+[[kv_namespaces]]
+binding = "BUNDLES"
+id = "your_kv_id_goes_here"
+preview_id = "your_kv_preview_id_goes_here"
+
+# Custom domain (optional)
+# 域名必须已经在 Cloudflare 托管
+routes = [
+  { pattern = "your.domain.com", custom_domain = true }
+]
