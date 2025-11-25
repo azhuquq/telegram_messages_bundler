@@ -1,0 +1,22 @@
+{
+  "name": "@tg-messages-bundler/chat-record-view",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "vite",
+    "dev:expose": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@lottiefiles/lottie-player": "^2.0.3",
+    "linkify-string": "^4.1.3",
+    "naive-ui": "^2.37.3",
+    "sass": "^1.70.0",
+    "vue": "^3.4.31"
+  }
+}

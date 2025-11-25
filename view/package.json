@@ -1,0 +1,10 @@
+{
+  "name": "messages-bundler-view",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter app dev",
+    "build": "pnpm --filter app build",
+    "preview": "pnpm --filter app preview"
+  }
+}
