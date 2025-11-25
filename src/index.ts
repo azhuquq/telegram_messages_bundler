@@ -136,18 +136,31 @@ export default {
         return new Response('Bundle ID required', { status: 400 })
       }
 
-      const storedData = await env.BUNDLES.get<EncryptedBundle>(`bundle:${bundleId}`, 'json')
-      if (!storedData) {
-        return new Response('Bundle not found', { status: 404 })
+      // Check cache first (bundles are immutable)
+      const cache = caches.default
+      const cacheKey = new Request(url.toString(), request)
+      let response = await cache.match(cacheKey)
+
+      if (!response) {
+        const storedData = await env.BUNDLES.get<EncryptedBundle>(`bundle:${bundleId}`, 'json')
+        if (!storedData) {
+          return new Response('Bundle not found', { status: 404 })
+        }
+
+        // Return encrypted data - decryption happens client-side
+        response = new Response(JSON.stringify(storedData), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=31536000', // Cache for 1 year (immutable)
+          },
+        })
+
+        // Store in cache (non-blocking)
+        ctx.waitUntil(cache.put(cacheKey, response.clone()))
       }
 
-      // Return encrypted data - decryption happens client-side
-      return new Response(JSON.stringify(storedData), {
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      })
+      return response
     }
 
     // API: Get file proxy (for Telegram files)
@@ -157,27 +170,39 @@ export default {
         return new Response('File ID required', { status: 400 })
       }
 
-      const api = new TelegramAPI(env.BOT_TOKEN)
-      try {
-        const file = await api.getFile(fileId)
-        if (!file.file_path) {
-          return new Response('File not available', { status: 404 })
+      // Check cache first
+      const cache = caches.default
+      const cacheKey = new Request(url.toString(), request)
+      let response = await cache.match(cacheKey)
+
+      if (!response) {
+        const api = new TelegramAPI(env.BOT_TOKEN)
+        try {
+          const file = await api.getFile(fileId)
+          if (!file.file_path) {
+            return new Response('File not available', { status: 404 })
+          }
+
+          const fileUrl = api.getFileUrl(file.file_path)
+          const fileResponse = await fetch(fileUrl)
+
+          response = new Response(fileResponse.body, {
+            headers: {
+              'Content-Type': fileResponse.headers.get('Content-Type') || 'application/octet-stream',
+              'Cache-Control': 'public, max-age=86400',
+              'Access-Control-Allow-Origin': '*',
+            },
+          })
+
+          // Store in cache (non-blocking)
+          ctx.waitUntil(cache.put(cacheKey, response.clone()))
+        } catch (error) {
+          console.error('File fetch error:', error)
+          return new Response('Failed to fetch file', { status: 500 })
         }
-
-        const fileUrl = api.getFileUrl(file.file_path)
-        const fileResponse = await fetch(fileUrl)
-
-        return new Response(fileResponse.body, {
-          headers: {
-            'Content-Type': fileResponse.headers.get('Content-Type') || 'application/octet-stream',
-            'Cache-Control': 'public, max-age=86400',
-            'Access-Control-Allow-Origin': '*',
-          },
-        })
-      } catch (error) {
-        console.error('File fetch error:', error)
-        return new Response('Failed to fetch file', { status: 500 })
       }
+
+      return response
     }
 
     // API: Get user avatar
@@ -187,25 +212,34 @@ export default {
         return new Response('User ID required', { status: 400 })
       }
 
+      // Check cache first (avatars rarely change)
+      const cache = caches.default
+      const cacheKey = new Request(url.toString(), request)
+      let response = await cache.match(cacheKey)
+
+      if (response) {
+        return response
+      }
+
       const api = new TelegramAPI(env.BOT_TOKEN)
       try {
-        // Check cache first (cache for 24 hours)
-        const cacheKey = `avatar:${userId}`
-        const cachedFileId = await env.BUNDLES.get(cacheKey)
-
-        let fileId: string | null = cachedFileId
+        // Check KV cache for file_id
+        const kvCacheKey = `avatar:${userId}`
+        let fileId = await env.BUNDLES.get(kvCacheKey)
 
         if (!fileId) {
           // Fetch user profile photos
           const photos = await api.getUserProfilePhotos(Number(userId), { limit: 1 })
           if (photos.total_count === 0 || !photos.photos[0]?.[0]) {
-            // Return a placeholder or 404
-            return new Response('No avatar', { status: 404 })
+            // Cache 404 response to avoid repeated lookups
+            response = new Response('No avatar', { status: 404 })
+            ctx.waitUntil(cache.put(cacheKey, response.clone()))
+            return response
           }
           // Get smallest size for efficiency
           fileId = photos.photos[0][0].file_id
-          // Cache the file_id for 24 hours
-          await env.BUNDLES.put(cacheKey, fileId, { expirationTtl: 86400 })
+          // Cache the file_id in KV for 7 days (non-blocking)
+          ctx.waitUntil(env.BUNDLES.put(kvCacheKey, fileId, { expirationTtl: 604800 }))
         }
 
         // Get file and proxy it
@@ -217,13 +251,17 @@ export default {
         const fileUrl = api.getFileUrl(file.file_path)
         const fileResponse = await fetch(fileUrl)
 
-        return new Response(fileResponse.body, {
+        response = new Response(fileResponse.body, {
           headers: {
             'Content-Type': fileResponse.headers.get('Content-Type') || 'image/jpeg',
-            'Cache-Control': 'public, max-age=86400',
+            'Cache-Control': 'public, max-age=604800', // 7 days
             'Access-Control-Allow-Origin': '*',
           },
         })
+
+        // Store in cache (non-blocking)
+        ctx.waitUntil(cache.put(cacheKey, response.clone()))
+        return response
       } catch (error) {
         console.error('Avatar fetch error:', error)
         return new Response('Failed to fetch avatar', { status: 500 })
