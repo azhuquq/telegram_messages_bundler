@@ -1,8 +1,22 @@
-import type { TelegramMessage, InlineKeyboardMarkup } from '../types/telegram'
+import type { TelegramMessage, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove } from '../types/telegram'
 import type { UserSession, MessageBundle } from '../types/bundle'
 import { TelegramAPI, escapeHtml } from '../telegram'
 import { extractStoredMessage, getSenderName } from './messages'
 import { generateKey, exportKey, encrypt, createShareId, parseShareId } from '../crypto'
+
+// Persistent keyboard with /done and /cancel buttons
+const commandKeyboard: ReplyKeyboardMarkup = {
+  keyboard: [
+    [{ text: '/cancel' }, { text: '/done' }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+}
+
+// Remove keyboard after bundle is created
+const removeKeyboard: ReplyKeyboardRemove = {
+  remove_keyboard: true,
+}
 
 function generateBundleId(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
@@ -66,13 +80,12 @@ export async function handleStartCommand(
 
   await api.sendMessage(chatId,
     `👋 <b>Welcome to Messages Bundler!</b>\n\n` +
-    `Forward messages you want to bundle, then send /done when finished.\n\n` +
+    `Forward messages you want to bundle, then tap <b>/done</b> when finished.\n\n` +
     `<b>Commands:</b>\n` +
-    `/start - Start a new bundle\n` +
     `/done - Finish and create bundle\n` +
     `/cancel - Cancel current bundle\n` +
     `/help - Show help`,
-    { parse_mode: 'HTML' }
+    { parse_mode: 'HTML', reply_markup: commandKeyboard }
   )
 }
 
@@ -156,11 +169,11 @@ export async function handleDoneCommand(
   const replyMarkup: InlineKeyboardMarkup = {
     inline_keyboard: [
       [
-        { text: '👁 Preview', url: `https://t.me/${botUsername}/view?startapp=${shareId}` },
+        { text: 'Preview', url: `https://t.me/${botUsername}/view?startapp=${shareId}` },
       ],
       [
         {
-          text: '📤 Send to chat',
+          text: 'Send to chat',
           switch_inline_query_chosen_chat: {
             query: shareId,
             allow_user_chats: true,
@@ -174,10 +187,9 @@ export async function handleDoneCommand(
   }
 
   await api.sendMessage(chatId,
-    `✅ <b>Bundle created!</b> �\n\n` +
+    `✅ <b>Bundle created!</b>\n\n` +
     `📝 Messages: ${bundle.messages.length}\n\n` +
     `<b>From:</b>\n${senderSummary}\n\n` +
-    `🔒 <b>End-to-end encrypted</b> - Only people with the link can view.\n\n` +
     `Use the buttons below to preview or share.\n\n` +
     `<i>💡 You can now forward more messages for a new bundle.</i>`,
     {
@@ -244,6 +256,7 @@ export async function handleForwardedMessage(
   const userId = msg.from!.id
 
   let sessionData = await kv.get(`session:${userId}`)
+  let isNewSession = false
 
   // Auto-create session if not exists
   if (!sessionData) {
@@ -253,6 +266,7 @@ export async function handleForwardedMessage(
       started_at: Date.now(),
     }
     sessionData = JSON.stringify(newSession)
+    isNewSession = true
   }
 
   const session: UserSession = JSON.parse(sessionData)
@@ -260,4 +274,12 @@ export async function handleForwardedMessage(
   session.messages.push(storedMsg)
 
   await kv.put(`session:${userId}`, JSON.stringify(session), { expirationTtl: 3600 })
+
+  // Show keyboard when first message is added
+  if (isNewSession) {
+    await api.sendMessage(chatId,
+      `Message added. Keep forwarding or tap <b>/done</b> to create bundle.`,
+      { parse_mode: 'HTML', reply_markup: commandKeyboard }
+    )
+  }
 }

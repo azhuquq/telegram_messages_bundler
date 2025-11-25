@@ -208,6 +208,21 @@ export interface InlineKeyboardMarkup {
   inline_keyboard: InlineKeyboardButton[][]
 }
 
+export interface KeyboardButton {
+  text: string
+}
+
+export interface ReplyKeyboardMarkup {
+  keyboard: KeyboardButton[][]
+  resize_keyboard?: boolean
+  one_time_keyboard?: boolean
+  is_persistent?: boolean
+}
+
+export interface ReplyKeyboardRemove {
+  remove_keyboard: true
+}
+
 export interface InlineQueryResultArticle {
   type: 'article'
   id: string

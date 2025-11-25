@@ -66,19 +66,18 @@ export async function handleInlineQuery(
   const results: InlineQueryResult[] = [{
     type: 'article',
     id: `bundle_${bundleId}`,
-    title: `🔐 Send combined forward (${meta.messageCount} messages)`,
-    description: `End-to-end encrypted • ${new Date(meta.createdAt).toLocaleDateString()}`,
+    title: `Send combined forward (${meta.messageCount} messages)`,
+    description: `${new Date(meta.createdAt).toLocaleDateString()}`,
     input_message_content: {
       message_text:
-        `🔐 <b>Combined Forward Messages</b>\n\n` +
+        `📦 <b>Combined Forward Messages</b>\n\n` +
         `📝 ${meta.messageCount} messages\n` +
-        `📅 ${new Date(meta.createdAt).toLocaleDateString()}\n\n` +
-        `🔒 End-to-end encrypted`,
+        `📅 ${new Date(meta.createdAt).toLocaleDateString()}\n\n`,
       parse_mode: 'HTML',
     },
     reply_markup: {
       inline_keyboard: [[
-        { text: '👁 View Messages', url: `https://t.me/${botUsername}/view?startapp=${shareId}` }
+        { text: 'View Messages', url: `https://t.me/${botUsername}/view?startapp=${shareId}` }
       ]]
     },
   }]

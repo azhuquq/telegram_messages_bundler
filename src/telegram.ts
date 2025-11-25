@@ -2,6 +2,8 @@ import type {
   TelegramUpdate,
   TelegramMessage,
   InlineKeyboardMarkup,
+  ReplyKeyboardMarkup,
+  ReplyKeyboardRemove,
   InlineQueryResult,
 } from './types/telegram'
 
@@ -43,7 +45,7 @@ export class TelegramAPI {
     text: string,
     options?: {
       parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2'
-      reply_markup?: InlineKeyboardMarkup
+      reply_markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove
       disable_web_page_preview?: boolean
     }
   ): Promise<TelegramMessage> {
