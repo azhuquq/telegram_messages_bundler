@@ -1,7 +1,16 @@
-import type { TelegramInlineQuery, InlineQueryResult } from '../types/telegram';
-import type { MessageBundle } from '../types/bundle';
-import { TelegramAPI, escapeHtml } from '../telegram';
-import { getSenderName } from './messages';
+import type { TelegramInlineQuery, InlineQueryResult } from '../types/telegram'
+import { TelegramAPI } from '../telegram'
+import { parseShareId } from '../crypto'
+
+// Encrypted bundle storage format
+interface EncryptedBundle {
+  encrypted: string
+  meta: {
+    messageCount: number
+    createdAt: number
+    creatorId: number
+  }
+}
 
 export async function handleInlineQuery(
   api: TelegramAPI,
@@ -9,9 +18,9 @@ export async function handleInlineQuery(
   kv: KVNamespace,
   botUsername: string
 ): Promise<void> {
-  const bundleId = query.query.trim();
-  
-  if (!bundleId) {
+  const shareId = query.query.trim()
+
+  if (!shareId) {
     // No query - show help
     await api.answerInlineQuery(query.id, [{
       type: 'article',
@@ -24,60 +33,58 @@ export async function handleInlineQuery(
     }], {
       cache_time: 0,
       is_personal: true,
-    });
-    return;
+    })
+    return
   }
 
-  // Look up the bundle
-  const bundle = await kv.get<MessageBundle>(`bundle:${bundleId}`, 'json');
-  
-  if (!bundle) {
+  // Parse shareId to extract bundleId
+  const parsed = parseShareId(shareId)
+  const bundleId = parsed ? parsed.bundleId : shareId
+
+  // Look up the bundle (encrypted)
+  const storedData = await kv.get<EncryptedBundle>(`bundle:${bundleId}`, 'json')
+
+  if (!storedData) {
     await api.answerInlineQuery(query.id, [{
       type: 'article',
       id: 'not_found',
       title: 'Bundle not found',
-      description: `No bundle found with ID: ${bundleId}`,
+      description: `No bundle found`,
       input_message_content: {
-        message_text: `❌ Bundle not found: ${bundleId}`,
+        message_text: `❌ Bundle not found`,
       },
     }], {
       cache_time: 0,
       is_personal: true,
-    });
-    return;
+    })
+    return
   }
 
-  // Get unique senders
-  const senders = new Set<string>();
-  for (const msg of bundle.messages) {
-    senders.add(getSenderName(msg));
-  }
-  const senderList = Array.from(senders).slice(0, 3).join(', ');
-  const moreSenders = senders.size > 3 ? ` +${senders.size - 3} more` : '';
+  // Use only metadata (messages are encrypted)
+  const { meta } = storedData
 
   const results: InlineQueryResult[] = [{
     type: 'article',
     id: `bundle_${bundleId}`,
-    title: `📦 Send combined forward (${bundle.messages.length} messages)`,
-    description: `From: ${senderList}${moreSenders}`,
+    title: `🔐 Send combined forward (${meta.messageCount} messages)`,
+    description: `End-to-end encrypted • ${new Date(meta.createdAt).toLocaleDateString()}`,
     input_message_content: {
-      message_text: 
-        `📦 <b>Combined Forward Messages</b>\n\n` +
-        `📝 ${bundle.messages.length} messages\n` +
-        `👤 From: ${escapeHtml(senderList)}${moreSenders}\n` +
-        `📅 ${new Date(bundle.created_at).toLocaleDateString()}\n\n` +
-        `Shared by ${escapeHtml(bundle.creator_name)}`,
+      message_text:
+        `🔐 <b>Combined Forward Messages</b>\n\n` +
+        `📝 ${meta.messageCount} messages\n` +
+        `📅 ${new Date(meta.createdAt).toLocaleDateString()}\n\n` +
+        `🔒 End-to-end encrypted`,
       parse_mode: 'HTML',
     },
     reply_markup: {
       inline_keyboard: [[
-        { text: '👁 View Messages', url: `https://t.me/${botUsername}/view?startapp=${bundleId}` }
+        { text: '👁 View Messages', url: `https://t.me/${botUsername}/view?startapp=${shareId}` }
       ]]
     },
-  }];
+  }]
 
   await api.answerInlineQuery(query.id, results, {
     cache_time: 300,
     is_personal: false,
-  });
+  })
 }

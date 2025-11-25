@@ -1,181 +1,192 @@
-import type { TelegramUpdate } from './types/telegram';
-import type { MessageBundle } from './types/bundle';
-import { TelegramAPI } from './telegram';
-import { 
-  handleStartCommand, 
-  handleDoneCommand, 
-  handleCancelCommand, 
+import type { TelegramUpdate } from './types/telegram'
+import { TelegramAPI } from './telegram'
+import {
+  handleStartCommand,
+  handleDoneCommand,
+  handleCancelCommand,
   handleHelpCommand,
-  handleForwardedMessage 
-} from './handlers/commands';
-import { handleInlineQuery } from './handlers/inline';
-import { handleCallbackQuery } from './handlers/callback';
+  handleForwardedMessage
+} from './handlers/commands'
+import { handleInlineQuery } from './handlers/inline'
+import { handleCallbackQuery } from './handlers/callback'
+import { parseShareId } from './crypto'
+
+// Encrypted bundle storage format
+interface EncryptedBundle {
+  encrypted: string
+  meta: {
+    messageCount: number
+    createdAt: number
+    creatorId: number
+  }
+}
 
 export interface Env {
-  BUNDLES: KVNamespace;
-  BOT_TOKEN: string;
-  BOT_USERNAME: string;
-  WEBHOOK_SECRET?: string;
+  BUNDLES: KVNamespace
+  BOT_TOKEN: string
+  BOT_USERNAME: string
+  WEBHOOK_SECRET?: string
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(request.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
+    const url = new URL(request.url)
+    const baseUrl = `${url.protocol}//${url.host}`
 
     // Handle webhook setup
     if (url.pathname === '/setup-webhook') {
-      const api = new TelegramAPI(env.BOT_TOKEN);
-      const webhookUrl = `${baseUrl}/webhook`;
-      await api.setWebhook(webhookUrl);
-      return new Response(`Webhook set to: ${webhookUrl}`);
+      const api = new TelegramAPI(env.BOT_TOKEN)
+      const webhookUrl = `${baseUrl}/webhook`
+      await api.setWebhook(webhookUrl)
+      return new Response(`Webhook set to: ${webhookUrl}`)
     }
 
     // Handle webhook info
     if (url.pathname === '/webhook-info') {
-      const api = new TelegramAPI(env.BOT_TOKEN);
-      const info = await api.getWebhookInfo();
+      const api = new TelegramAPI(env.BOT_TOKEN)
+      const info = await api.getWebhookInfo()
       return new Response(JSON.stringify(info, null, 2), {
         headers: { 'Content-Type': 'application/json' },
-      });
+      })
     }
 
     // Handle Telegram webhook
     if (url.pathname === '/webhook' && request.method === 'POST') {
       try {
-        const update: TelegramUpdate = await request.json();
-        await handleUpdate(update, env, baseUrl);
-        return new Response('OK');
+        const update: TelegramUpdate = await request.json()
+        await handleUpdate(update, env, baseUrl)
+        return new Response('OK')
       } catch (error) {
-        console.error('Webhook error:', error);
-        return new Response('Error', { status: 500 });
+        console.error('Webhook error:', error)
+        return new Response('Error', { status: 500 })
       }
     }
 
-    // API: Get bundle data
+    // API: Get bundle data (returns encrypted data)
     if (url.pathname.startsWith('/api/bundle/')) {
-      const bundleId = url.pathname.split('/').pop();
+      const bundleId = url.pathname.split('/').pop()
       if (!bundleId) {
-        return new Response('Bundle ID required', { status: 400 });
+        return new Response('Bundle ID required', { status: 400 })
       }
 
-      const bundle = await env.BUNDLES.get<MessageBundle>(`bundle:${bundleId}`, 'json');
-      if (!bundle) {
-        return new Response('Bundle not found', { status: 404 });
+      const storedData = await env.BUNDLES.get<EncryptedBundle>(`bundle:${bundleId}`, 'json')
+      if (!storedData) {
+        return new Response('Bundle not found', { status: 404 })
       }
 
-      return new Response(JSON.stringify(bundle), {
+      // Return encrypted data - decryption happens client-side
+      return new Response(JSON.stringify(storedData), {
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
         },
-      });
+      })
     }
 
     // API: Get file proxy (for Telegram files)
     if (url.pathname.startsWith('/api/file/')) {
-      const fileId = url.pathname.split('/').pop();
+      const fileId = url.pathname.split('/').pop()
       if (!fileId) {
-        return new Response('File ID required', { status: 400 });
+        return new Response('File ID required', { status: 400 })
       }
 
-      const api = new TelegramAPI(env.BOT_TOKEN);
+      const api = new TelegramAPI(env.BOT_TOKEN)
       try {
-        const file = await api.getFile(fileId);
+        const file = await api.getFile(fileId)
         if (!file.file_path) {
-          return new Response('File not available', { status: 404 });
+          return new Response('File not available', { status: 404 })
         }
 
-        const fileUrl = api.getFileUrl(file.file_path);
-        const fileResponse = await fetch(fileUrl);
-        
+        const fileUrl = api.getFileUrl(file.file_path)
+        const fileResponse = await fetch(fileUrl)
+
         return new Response(fileResponse.body, {
           headers: {
             'Content-Type': fileResponse.headers.get('Content-Type') || 'application/octet-stream',
             'Cache-Control': 'public, max-age=86400',
             'Access-Control-Allow-Origin': '*',
           },
-        });
+        })
       } catch (error) {
-        console.error('File fetch error:', error);
-        return new Response('Failed to fetch file', { status: 500 });
+        console.error('File fetch error:', error)
+        return new Response('Failed to fetch file', { status: 500 })
       }
     }
 
     // Serve the Mini App viewer (will be handled by Cloudflare Pages or static assets)
     if (url.pathname === '/view' || url.pathname.startsWith('/view/')) {
-      return serveViewerPage(env.BOT_USERNAME);
+      return serveViewerPage(env.BOT_USERNAME)
     }
 
     // Health check
     if (url.pathname === '/health') {
-      return new Response('OK');
+      return new Response('OK')
     }
 
     // Default: serve index/help page
     return new Response(getIndexHtml(env.BOT_USERNAME), {
       headers: { 'Content-Type': 'text/html' },
-    });
+    })
   },
-};
+}
 
 async function handleUpdate(update: TelegramUpdate, env: Env, baseUrl: string): Promise<void> {
-  const api = new TelegramAPI(env.BOT_TOKEN);
+  const api = new TelegramAPI(env.BOT_TOKEN)
 
   // Handle inline query
   if (update.inline_query) {
-    await handleInlineQuery(api, update.inline_query, env.BUNDLES, env.BOT_USERNAME);
-    return;
+    await handleInlineQuery(api, update.inline_query, env.BUNDLES, env.BOT_USERNAME)
+    return
   }
 
   // Handle callback query
   if (update.callback_query) {
-    await handleCallbackQuery(api, update.callback_query, env.BUNDLES);
-    return;
+    await handleCallbackQuery(api, update.callback_query, env.BUNDLES)
+    return
   }
 
   // Handle message
-  const msg = update.message;
-  if (!msg) return;
+  const msg = update.message
+  if (!msg) return
 
   // Only handle private chats
-  if (msg.chat.type !== 'private') return;
+  if (msg.chat.type !== 'private') return
 
-  const text = msg.text || '';
+  const text = msg.text || ''
 
   // Handle commands
   if (text.startsWith('/start')) {
-    await handleStartCommand(api, msg, env.BUNDLES, env.BOT_USERNAME);
-    return;
+    await handleStartCommand(api, msg, env.BUNDLES, env.BOT_USERNAME)
+    return
   }
 
   if (text === '/done') {
-    await handleDoneCommand(api, msg, env.BUNDLES, env.BOT_USERNAME, baseUrl);
-    return;
+    await handleDoneCommand(api, msg, env.BUNDLES, env.BOT_USERNAME, baseUrl)
+    return
   }
 
   if (text === '/cancel') {
-    await handleCancelCommand(api, msg, env.BUNDLES);
-    return;
+    await handleCancelCommand(api, msg, env.BUNDLES)
+    return
   }
 
   if (text === '/help') {
-    await handleHelpCommand(api, msg, env.BOT_USERNAME);
-    return;
+    await handleHelpCommand(api, msg, env.BOT_USERNAME)
+    return
   }
 
   // Handle forwarded messages
   if (msg.forward_from || msg.forward_from_chat || msg.forward_sender_name || msg.forward_date) {
-    await handleForwardedMessage(api, msg, env.BUNDLES);
-    return;
+    await handleForwardedMessage(api, msg, env.BUNDLES)
+    return
   }
 
   // Handle regular messages during session (treat as content to bundle)
   if (msg.text || msg.photo || msg.document || msg.video || msg.audio || msg.voice || msg.sticker || msg.animation) {
     // Check if user has an active session
-    const sessionData = await env.BUNDLES.get(`session:${msg.from!.id}`);
+    const sessionData = await env.BUNDLES.get(`session:${msg.from!.id}`)
     if (sessionData) {
-      await handleForwardedMessage(api, msg, env.BUNDLES);
+      await handleForwardedMessage(api, msg, env.BUNDLES)
     }
   }
 }
@@ -186,129 +197,231 @@ function serveViewerPage(botUsername: string): Response {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Messages Bundle Viewer</title>
+  <title>Messages Bundle</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --bg-color: var(--tg-theme-bg-color, #ffffff);
+      --text-color: var(--tg-theme-text-color, #000000);
+      --hint-color: var(--tg-theme-hint-color, #999999);
+      --link-color: var(--tg-theme-link-color, #3390ec);
+      --bubble-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      --section-bg: var(--tg-theme-section-bg-color, #ffffff);
     }
     
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: var(--tg-theme-bg-color, #ffffff);
-      color: var(--tg-theme-text-color, #000000);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-color);
+      color: var(--text-color);
       min-height: 100vh;
-      padding: 16px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
     }
     
     .container {
       max-width: 600px;
       margin: 0 auto;
+      padding-bottom: 20px;
     }
     
-    .header {
-      text-align: center;
-      margin-bottom: 20px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--tg-theme-hint-color, #999999);
-    }
-    
-    .header h1 {
-      font-size: 20px;
-      margin-bottom: 4px;
-    }
-    
-    .header .meta {
-      font-size: 14px;
-      color: var(--tg-theme-hint-color, #999999);
-    }
-    
-    .date-group {
-      margin-bottom: 24px;
-    }
-    
+    /* Date Header - Sticky */
     .date-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
       text-align: center;
-      margin-bottom: 12px;
+      padding: 12px 0 8px;
     }
     
     .date-header span {
-      background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      display: inline-block;
       padding: 4px 12px;
+      background: color-mix(in srgb, var(--text-color) 60%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 14px;
+      color: var(--section-bg);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    
+    /* Sender Group */
+    .sender-group {
+      display: flex;
+      margin: 12px 8px;
+    }
+    
+    .avatar-container {
+      display: flex;
+      width: 46px;
+      min-width: 46px;
+      max-width: 46px;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    
+    .avatar {
+      position: sticky;
+      bottom: 12px;
+      z-index: 5;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--link-color), #7c4dff);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    
+    .messages-container {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    /* Sender Name - Sticky */
+    .sender-name {
+      position: sticky;
+      top: 44px;
+      z-index: 8;
+      width: max-content;
+      max-width: calc(100% - 20px);
+      padding: 4px 10px;
+      margin: 4px;
+      background: color-mix(in srgb, var(--bg-color) 85%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-radius: 12px;
       font-size: 13px;
-      color: var(--tg-theme-hint-color, #999999);
-    }
-    
-    .sender-group {
-      margin-bottom: 16px;
-    }
-    
-    .sender-name {
-      font-size: 14px;
       font-weight: 600;
-      color: var(--tg-theme-link-color, #3390ec);
-      margin-bottom: 6px;
-      padding-left: 12px;
+      color: var(--link-color);
     }
     
-    .message {
-      background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-      padding: 10px 14px;
-      border-radius: 16px;
-      margin-bottom: 4px;
-      max-width: 85%;
+    /* Message Bubble */
+    .bubble {
+      border-radius: 4px 16px 16px 4px;
+      width: max-content;
+      min-width: 80px;
+      max-width: calc(100vw - 80px);
+      margin: 3px 4px;
+      padding: 8px 12px;
+      background: var(--bubble-bg);
       word-wrap: break-word;
+      overflow-wrap: break-word;
     }
     
-    .message-text {
+    .bubble:first-of-type {
+      border-radius: 16px 16px 16px 4px;
+    }
+    
+    .bubble:last-of-type {
+      border-radius: 4px 16px 16px 16px;
+    }
+    
+    .bubble:first-of-type:last-of-type {
+      border-radius: 16px;
+    }
+    
+    .bubble-text {
       font-size: 15px;
-      line-height: 1.4;
       white-space: pre-wrap;
     }
     
-    .message-media {
-      margin-top: 8px;
+    .bubble-media {
+      margin: 4px -4px;
     }
     
-    .message-media img {
+    .bubble-media img, .bubble-media video {
       max-width: 100%;
-      border-radius: 8px;
+      max-height: 300px;
+      border-radius: 10px;
+      display: block;
     }
     
-    .message-time {
+    .bubble-sticker img {
+      max-width: 180px;
+      max-height: 180px;
+    }
+    
+    .bubble-file {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: color-mix(in srgb, var(--link-color) 15%, transparent);
+      border-radius: 10px;
+      margin: 4px 0;
+    }
+    
+    .bubble-file-icon {
+      font-size: 24px;
+    }
+    
+    .bubble-file-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .bubble-file-name {
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .bubble-file-type {
+      font-size: 12px;
+      color: var(--hint-color);
+    }
+    
+    .bubble-time {
       font-size: 11px;
-      color: var(--tg-theme-hint-color, #999999);
+      color: var(--hint-color);
       text-align: right;
       margin-top: 4px;
     }
     
-    .media-placeholder {
-      background: var(--tg-theme-button-color, #3390ec);
-      color: var(--tg-theme-button-text-color, #ffffff);
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-size: 14px;
+    /* Loading & Error */
+    .loading, .error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      gap: 12px;
     }
     
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: var(--tg-theme-hint-color, #999999);
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--bubble-bg);
+      border-top-color: var(--link-color);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
     
-    .error {
-      text-align: center;
-      padding: 40px;
-      color: #ff3b30;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
+    
+    .error { color: #ff3b30; }
+    .error-icon { font-size: 48px; }
   </style>
 </head>
 <body>
   <div class="container" id="app">
-    <div class="loading">Loading...</div>
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      <div>Decrypting messages...</div>
+    </div>
   </div>
   
   <script>
@@ -316,173 +429,268 @@ function serveViewerPage(botUsername: string): Response {
     tg.ready();
     tg.expand();
     
-    const bundleId = tg.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('startapp');
+    const shareId = tg.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('startapp');
     
-    if (!bundleId) {
-      document.getElementById('app').innerHTML = '<div class="error">No bundle ID provided</div>';
+    if (!shareId) {
+      showError('No bundle ID provided');
     } else {
-      loadBundle(bundleId);
+      loadBundle(shareId);
     }
     
-    async function loadBundle(id) {
+    function showError(msg) {
+      document.getElementById('app').innerHTML = 
+        '<div class="error"><div class="error-icon">😕</div><div>' + msg + '</div></div>';
+    }
+    
+    // Parse shareId: bundleId_keyBase64
+    function parseShareId(shareId) {
+      const idx = shareId.indexOf('_');
+      if (idx === -1) return null;
+      return {
+        bundleId: shareId.substring(0, idx),
+        keyBase64: shareId.substring(idx + 1)
+      };
+    }
+    
+    // Base64url decode
+    function base64UrlToArrayBuffer(base64url) {
+      let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4) base64 += '=';
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer;
+    }
+    
+    // Import decryption key
+    async function importKey(keyBase64) {
+      const raw = base64UrlToArrayBuffer(keyBase64);
+      return await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    }
+    
+    // Decrypt and decompress data
+    async function decrypt(encryptedData, key) {
+      const combined = new Uint8Array(base64UrlToArrayBuffer(encryptedData));
+      const iv = combined.slice(0, 12);
+      const ciphertext = combined.slice(12);
+      const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+      // Decompress with pako
+      return pako.inflate(new Uint8Array(decrypted), { to: 'string' });
+    }
+    
+    async function loadBundle(shareId) {
       try {
-        const response = await fetch('/api/bundle/' + id);
-        if (!response.ok) {
-          throw new Error('Bundle not found');
+        const parsed = parseShareId(shareId);
+        if (!parsed) {
+          showError('Invalid link format');
+          return;
         }
-        const bundle = await response.json();
+        
+        const { bundleId, keyBase64 } = parsed;
+        
+        // Fetch encrypted data
+        const response = await fetch('/api/bundle/' + bundleId);
+        if (!response.ok) throw new Error('Bundle not found or expired');
+        const storedData = await response.json();
+        
+        // Decrypt client-side
+        const key = await importKey(keyBase64);
+        const decrypted = await decrypt(storedData.encrypted, key);
+        const bundle = JSON.parse(decrypted);
+        
         renderBundle(bundle);
       } catch (error) {
-        document.getElementById('app').innerHTML = '<div class="error">' + error.message + '</div>';
+        console.error('Decryption error:', error);
+        showError('Failed to decrypt. Invalid or corrupted link.');
       }
     }
     
-    function formatDate(timestamp) {
-      const date = new Date(timestamp * 1000);
-      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    function formatDate(ts) {
+      const d = new Date(ts * 1000);
+      const now = new Date();
+      const diff = now - d;
+      
+      if (diff < 86400000 && d.getDate() === now.getDate()) return 'Today';
+      if (diff < 172800000 && d.getDate() === now.getDate() - 1) return 'Yesterday';
+      
+      return d.toLocaleDateString(navigator.language, { 
+        year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+        month: 'long', 
+        day: 'numeric' 
+      });
     }
     
-    function formatTime(timestamp) {
-      const date = new Date(timestamp * 1000);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    function formatTime(ts) {
+      return new Date(ts * 1000).toLocaleTimeString(navigator.language, { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    }
+    
+    function getSenderId(msg) {
+      if (msg.forward_from) return 'u' + msg.forward_from.id;
+      if (msg.forward_from_chat) return 'c' + msg.forward_from_chat.id;
+      if (msg.forward_sender_name) return 'n' + msg.forward_sender_name;
+      if (msg.from) return 'u' + msg.from.id;
+      return 'unknown';
     }
     
     function getSenderName(msg) {
-      if (msg.forward_from) {
-        return [msg.forward_from.first_name, msg.forward_from.last_name].filter(Boolean).join(' ');
-      }
-      if (msg.forward_from_chat) {
-        return msg.forward_from_chat.title || 'Unknown Chat';
-      }
-      if (msg.forward_sender_name) {
-        return msg.forward_sender_name;
-      }
-      if (msg.from) {
-        return [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ');
-      }
+      if (msg.forward_from) return [msg.forward_from.first_name, msg.forward_from.last_name].filter(Boolean).join(' ');
+      if (msg.forward_from_chat) return msg.forward_from_chat.title || 'Chat';
+      if (msg.forward_sender_name) return msg.forward_sender_name;
+      if (msg.from) return [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ');
       return 'Unknown';
     }
     
+    function getInitials(name) {
+      return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+    }
+    
     function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+      const d = document.createElement('div');
+      d.textContent = text || '';
+      return d.innerHTML;
     }
     
     function renderBundle(bundle) {
-      // Group by date
+      // Group by date, then by sender
       const dateGroups = {};
       
       for (const msg of bundle.messages) {
-        const timestamp = msg.forward_date || msg.date;
-        const dateKey = formatDate(timestamp);
-        
-        if (!dateGroups[dateKey]) {
-          dateGroups[dateKey] = [];
-        }
+        const ts = msg.forward_date || msg.date;
+        const dateKey = formatDate(ts);
+        if (!dateGroups[dateKey]) dateGroups[dateKey] = [];
         dateGroups[dateKey].push(msg);
       }
       
-      let html = '<div class="header">';
-      html += '<h1>📦 Messages Bundle</h1>';
-      html += '<div class="meta">' + bundle.messages.length + ' messages • Shared by ' + escapeHtml(bundle.creator_name) + '</div>';
-      html += '</div>';
+      let html = '';
       
       for (const [date, messages] of Object.entries(dateGroups)) {
-        html += '<div class="date-group">';
         html += '<div class="date-header"><span>' + date + '</span></div>';
         
-        // Group by sender
-        let currentSender = null;
+        let currentSenderId = null;
         let senderMessages = [];
         
         for (const msg of messages) {
-          const sender = getSenderName(msg);
-          if (sender !== currentSender) {
-            if (currentSender !== null) {
-              html += renderSenderGroup(currentSender, senderMessages);
+          const senderId = getSenderId(msg);
+          if (senderId !== currentSenderId) {
+            if (currentSenderId !== null) {
+              html += renderSenderGroup(senderMessages);
             }
-            currentSender = sender;
+            currentSenderId = senderId;
             senderMessages = [msg];
           } else {
             senderMessages.push(msg);
           }
         }
         
-        if (currentSender !== null) {
-          html += renderSenderGroup(currentSender, senderMessages);
+        if (senderMessages.length > 0) {
+          html += renderSenderGroup(senderMessages);
         }
-        
-        html += '</div>';
       }
       
       document.getElementById('app').innerHTML = html;
     }
     
-    function renderSenderGroup(sender, messages) {
+    function renderSenderGroup(messages) {
+      const sender = getSenderName(messages[0]);
+      const initials = getInitials(sender);
+      
       let html = '<div class="sender-group">';
+      html += '<div class="avatar-container"><div class="avatar">' + initials + '</div></div>';
+      html += '<div class="messages-container">';
       html += '<div class="sender-name">' + escapeHtml(sender) + '</div>';
       
       for (const msg of messages) {
-        html += renderMessage(msg);
+        html += renderBubble(msg);
       }
       
+      html += '</div></div>';
+      return html;
+    }
+    
+    function renderBubble(msg) {
+      const ts = msg.forward_date || msg.date;
+      let html = '<div class="bubble">';
+      
+      // Photo
+      if (msg.photo && msg.photo.length > 0) {
+        html += '<div class="bubble-media"><img src="/api/file/' + msg.photo[0].file_id + '" loading="lazy"></div>';
+      }
+      
+      // Sticker
+      if (msg.sticker) {
+        if (msg.sticker.is_video || msg.sticker.is_animated) {
+          html += '<div class="bubble-file"><span class="bubble-file-icon">🎨</span><div class="bubble-file-info"><div class="bubble-file-name">Sticker ' + (msg.sticker.emoji || '') + '</div><div class="bubble-file-type">Animated</div></div></div>';
+        } else {
+          html += '<div class="bubble-media bubble-sticker"><img src="/api/file/' + msg.sticker.file_id + '" loading="lazy"></div>';
+        }
+      }
+      
+      // Video
+      if (msg.video) {
+        html += '<div class="bubble-file"><span class="bubble-file-icon">🎬</span><div class="bubble-file-info"><div class="bubble-file-name">' + escapeHtml(msg.video.file_name || 'Video') + '</div><div class="bubble-file-type">' + formatDuration(msg.video.duration) + '</div></div></div>';
+      }
+      
+      // Animation/GIF
+      if (msg.animation) {
+        html += '<div class="bubble-media"><video src="/api/file/' + msg.animation.file_id + '" autoplay loop muted playsinline></video></div>';
+      }
+      
+      // Audio
+      if (msg.audio) {
+        html += '<div class="bubble-file"><span class="bubble-file-icon">🎵</span><div class="bubble-file-info"><div class="bubble-file-name">' + escapeHtml(msg.audio.title || msg.audio.performer || 'Audio') + '</div><div class="bubble-file-type">' + formatDuration(msg.audio.duration) + '</div></div></div>';
+      }
+      
+      // Voice
+      if (msg.voice) {
+        html += '<div class="bubble-file"><span class="bubble-file-icon">🎤</span><div class="bubble-file-info"><div class="bubble-file-name">Voice message</div><div class="bubble-file-type">' + formatDuration(msg.voice.duration) + '</div></div></div>';
+      }
+      
+      // Document
+      if (msg.document) {
+        const icon = getFileIcon(msg.document.mime_type);
+        html += '<div class="bubble-file"><span class="bubble-file-icon">' + icon + '</span><div class="bubble-file-info"><div class="bubble-file-name">' + escapeHtml(msg.document.file_name || 'Document') + '</div><div class="bubble-file-type">' + (msg.document.mime_type || 'File') + '</div></div></div>';
+      }
+      
+      // Text
+      const text = msg.text || msg.caption || '';
+      if (text) {
+        html += '<div class="bubble-text">' + escapeHtml(text) + '</div>';
+      }
+      
+      html += '<div class="bubble-time">' + formatTime(ts) + '</div>';
       html += '</div>';
       return html;
     }
     
-    function renderMessage(msg) {
-      const timestamp = msg.forward_date || msg.date;
-      let html = '<div class="message">';
-      
-      // Text content
-      const text = msg.text || msg.caption || '';
-      if (text) {
-        html += '<div class="message-text">' + escapeHtml(text) + '</div>';
-      }
-      
-      // Media
-      if (msg.photo && msg.photo.length > 0) {
-        const photo = msg.photo[0];
-        html += '<div class="message-media"><img src="/api/file/' + photo.file_id + '" alt="Photo" loading="lazy"></div>';
-      }
-      
-      if (msg.sticker) {
-        html += '<div class="media-placeholder">🎨 Sticker ' + (msg.sticker.emoji || '') + '</div>';
-      }
-      
-      if (msg.document) {
-        html += '<div class="media-placeholder">📎 ' + escapeHtml(msg.document.file_name || 'Document') + '</div>';
-      }
-      
-      if (msg.video) {
-        html += '<div class="media-placeholder">🎬 Video</div>';
-      }
-      
-      if (msg.audio) {
-        html += '<div class="media-placeholder">🎵 ' + escapeHtml(msg.audio.title || 'Audio') + '</div>';
-      }
-      
-      if (msg.voice) {
-        html += '<div class="media-placeholder">🎤 Voice message</div>';
-      }
-      
-      if (msg.animation) {
-        html += '<div class="media-placeholder">🎞 GIF</div>';
-      }
-      
-      html += '<div class="message-time">' + formatTime(timestamp) + '</div>';
-      html += '</div>';
-      
-      return html;
+    function formatDuration(sec) {
+      if (!sec) return '';
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+    
+    function getFileIcon(mime) {
+      if (!mime) return '📄';
+      if (mime.startsWith('image/')) return '🖼';
+      if (mime.startsWith('video/')) return '🎬';
+      if (mime.startsWith('audio/')) return '🎵';
+      if (mime.includes('pdf')) return '📕';
+      if (mime.includes('zip') || mime.includes('rar') || mime.includes('7z')) return '📦';
+      if (mime.includes('word') || mime.includes('document')) return '📝';
+      if (mime.includes('sheet') || mime.includes('excel')) return '📊';
+      return '📄';
     }
   </script>
 </body>
-</html>`;
+</html>`
 
   return new Response(html, {
     headers: { 'Content-Type': 'text/html' },
-  });
+  })
 }
 
 function getIndexHtml(botUsername: string): string {
@@ -533,5 +741,5 @@ function getIndexHtml(botUsername: string): string {
   
   <a href="https://t.me/${botUsername}" class="btn">Open Bot</a>
 </body>
-</html>`;
+</html>`
 }

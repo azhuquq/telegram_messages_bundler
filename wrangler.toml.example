@@ -16,6 +16,4 @@ preview_id = "your_kv_preview_id_goes_here"
 
 # Custom domain (optional)
 # 域名必须已经在 Cloudflare 托管
-routes = [
-  { pattern = "your.domain.com", custom_domain = true }
-]
+routes = [{ pattern = "your.domain.com", custom_domain = true }]

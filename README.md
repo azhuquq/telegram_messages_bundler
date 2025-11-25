@@ -99,23 +99,23 @@ This starts a local development server. Note that Telegram webhooks won't work l
 
 ## API Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /webhook` | Telegram webhook receiver |
-| `GET /setup-webhook` | Set up Telegram webhook |
-| `GET /webhook-info` | Get current webhook info |
-| `GET /api/bundle/:id` | Get bundle data as JSON |
-| `GET /api/file/:fileId` | Proxy Telegram files |
-| `GET /view` | Mini App viewer |
-| `GET /health` | Health check |
+| Endpoint                | Description               |
+| ----------------------- | ------------------------- |
+| `POST /webhook`         | Telegram webhook receiver |
+| `GET /setup-webhook`    | Set up Telegram webhook   |
+| `GET /webhook-info`     | Get current webhook info  |
+| `GET /api/bundle/:id`   | Get bundle data as JSON   |
+| `GET /api/file/:fileId` | Proxy Telegram files      |
+| `GET /view`             | Mini App viewer           |
+| `GET /health`           | Health check              |
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `BOT_TOKEN` | Telegram bot token (set as secret) |
-| `BOT_USERNAME` | Bot username without @ |
-| `BUNDLES` | KV namespace binding |
+| Variable       | Description                        |
+| -------------- | ---------------------------------- |
+| `BOT_TOKEN`    | Telegram bot token (set as secret) |
+| `BOT_USERNAME` | Bot username without @             |
+| `BUNDLES`      | KV namespace binding               |
 
 ## License
 
