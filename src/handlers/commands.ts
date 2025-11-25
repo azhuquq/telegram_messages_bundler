@@ -51,16 +51,15 @@ export async function handleStartCommand(
       const storedData = await kv.get<{ encrypted: string; meta: { messageCount: number; createdAt: number } }>(`bundle:${bundleId}`, 'json')
       if (storedData) {
         await api.sendMessage(chatId,
-          `🔐 <b>Encrypted Bundle</b>\n\n` +
+          `📦 <b>Messages Bundle</b>\n\n` +
           `📝 Messages: ${storedData.meta.messageCount}\n` +
           `📅 Created: ${new Date(storedData.meta.createdAt).toLocaleDateString()}\n\n` +
-          `🔒 End-to-end encrypted\n` +
           `Click the button below to view the full content.`,
           {
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [[
-                { text: '👁 View Bundle', url: `https://t.me/${botUsername}/view?startapp=${shareId}` }
+                { text: 'View Bundle', url: `https://t.me/${botUsername}/view?startapp=${shareId}` }
               ]]
             }
           }

@@ -53,14 +53,14 @@ export default defineComponent({
         const shareId = tgWebApp?.initDataUnsafe?.start_param || params.get('startapp') || params.get('tgWebAppStartParam')
 
         if (!shareId) {
-          errorMsg.value = '无效的链接'
+          errorMsg.value = 'Invalid link'
           isLoading.value = false
           return
         }
 
         const parsed = parseShareId(shareId)
         if (!parsed) {
-          errorMsg.value = '无效的链接格式'
+          errorMsg.value = 'Invalid link format'
           isLoading.value = false
           return
         }
@@ -70,7 +70,7 @@ export default defineComponent({
         // Fetch encrypted data
         const response = await fetch(`/api/bundle/${bundleId}`)
         if (!response.ok) {
-          errorMsg.value = '消息包不存在或已过期'
+          errorMsg.value = 'Bundle does not exist or has expired'
           isLoading.value = false
           return
         }
@@ -90,14 +90,14 @@ export default defineComponent({
         tgWebApp?.expand()
       } catch (err) {
         console.error('Decryption error:', err)
-        errorMsg.value = '解密失败，链接可能已损坏'
+        errorMsg.value = 'Decryption failed, the link may be corrupted'
         isLoading.value = false
       }
     })
 
     return () => {
       if (isLoading.value)
-        return <div class={styles.tip}>解密中...</div>
+        return <div class={styles.tip}>Decrypting...</div>
       if (errorMsg.value)
         return <div class={styles.tip}>{errorMsg.value}</div>
       return <div class={styles.container}>
