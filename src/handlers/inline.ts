@@ -71,8 +71,8 @@ export async function handleInlineQuery(
     input_message_content: {
       message_text:
         `📦 <b>Combined Forward Messages</b>\n\n` +
-        `📝 ${meta.messageCount} messages\n` +
-        `📅 ${new Date(meta.createdAt).toLocaleDateString()}\n\n`,
+        `📝 ${meta.messageCount} messages\n\n` +
+        `📅 ${new Date(meta.createdAt).toLocaleDateString()}`,
       parse_mode: 'HTML',
     },
     reply_markup: {
