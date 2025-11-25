@@ -163,6 +163,56 @@ export default {
       }
     }
 
+    // API: Get user avatar
+    if (url.pathname.startsWith('/api/avatar/')) {
+      const userId = url.pathname.split('/').pop()
+      if (!userId || isNaN(Number(userId))) {
+        return new Response('User ID required', { status: 400 })
+      }
+
+      const api = new TelegramAPI(env.BOT_TOKEN)
+      try {
+        // Check cache first (cache for 24 hours)
+        const cacheKey = `avatar:${userId}`
+        const cachedFileId = await env.BUNDLES.get(cacheKey)
+
+        let fileId: string | null = cachedFileId
+
+        if (!fileId) {
+          // Fetch user profile photos
+          const photos = await api.getUserProfilePhotos(Number(userId), { limit: 1 })
+          if (photos.total_count === 0 || !photos.photos[0]?.[0]) {
+            // Return a placeholder or 404
+            return new Response('No avatar', { status: 404 })
+          }
+          // Get smallest size for efficiency
+          fileId = photos.photos[0][0].file_id
+          // Cache the file_id for 24 hours
+          await env.BUNDLES.put(cacheKey, fileId, { expirationTtl: 86400 })
+        }
+
+        // Get file and proxy it
+        const file = await api.getFile(fileId)
+        if (!file.file_path) {
+          return new Response('Avatar not available', { status: 404 })
+        }
+
+        const fileUrl = api.getFileUrl(file.file_path)
+        const fileResponse = await fetch(fileUrl)
+
+        return new Response(fileResponse.body, {
+          headers: {
+            'Content-Type': fileResponse.headers.get('Content-Type') || 'image/jpeg',
+            'Cache-Control': 'public, max-age=86400',
+            'Access-Control-Allow-Origin': '*',
+          },
+        })
+      } catch (error) {
+        console.error('Avatar fetch error:', error)
+        return new Response('Failed to fetch avatar', { status: 500 })
+      }
+    }
+
     // Serve the Mini App viewer (will be handled by Cloudflare Pages or static assets)
     if (url.pathname === '/view' || url.pathname.startsWith('/view/')) {
       return serveViewerPage(env.BOT_USERNAME)

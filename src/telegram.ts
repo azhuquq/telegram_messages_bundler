@@ -113,6 +113,10 @@ export class TelegramAPI {
     return this.request('getFile', { file_id })
   }
 
+  async getUserProfilePhotos(user_id: number, options?: { offset?: number; limit?: number }): Promise<{ total_count: number; photos: Array<Array<{ file_id: string; file_unique_id: string; width: number; height: number }>> }> {
+    return this.request('getUserProfilePhotos', { user_id, ...options })
+  }
+
   getFileUrl(file_path: string): string {
     return `https://api.telegram.org/file/bot${this.token}/${file_path}`
   }

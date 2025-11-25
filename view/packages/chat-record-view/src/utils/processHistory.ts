@@ -48,12 +48,14 @@ export default function processHistory(history: TelegramMessage[]) {
       if (currentSenderGroup) {
         currentDateGroup!.messages.push(currentSenderGroup)
       }
+      // Use avatar API for numeric user IDs (not hidden users or channels)
+      const avatar = typeof senderId === 'number' && senderId > 0 ? `/api/avatar/${senderId}` : ''
       currentSenderGroup = {
         id: i,
         senderId,
         username,
         messages: [],
-        avatar: '', // Telegram 转发消息不提供头像
+        avatar,
       }
     }
     currentSenderGroup.messages.push(current)

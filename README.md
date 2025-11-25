@@ -139,14 +139,15 @@ Note: Telegram webhooks won't work locally unless you use a tunnel like ngrok.
 
 ## API Endpoints
 
-| Endpoint                | Description                         |
-| ----------------------- | ----------------------------------- |
-| `POST /webhook`         | Telegram webhook receiver           |
-| `GET /setup-webhook`    | Set up Telegram webhook             |
-| `GET /webhook-info`     | Get current webhook info            |
-| `GET /api/bundle/:id`   | Get encrypted bundle data           |
-| `GET /api/file/:fileId` | Proxy Telegram files                |
-| `GET /view/*`           | Mini App viewer (static Vue.js app) |
+| Endpoint                 | Description                         |
+| ------------------------ | ----------------------------------- |
+| `POST /webhook`          | Telegram webhook receiver           |
+| `GET /setup-webhook`     | Set up Telegram webhook             |
+| `GET /webhook-info`      | Get current webhook info            |
+| `GET /api/bundle/:id`    | Get encrypted bundle data           |
+| `GET /api/file/:fileId`  | Proxy Telegram files                |
+| `GET /api/avatar/:userId`| Proxy user profile photos           |
+| `GET /view/*`            | Mini App viewer (static Vue.js app) |
 
 ## Environment Variables
 
