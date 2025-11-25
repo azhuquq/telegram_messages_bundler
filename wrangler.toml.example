@@ -6,6 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # Bot username without @ (e.g., "your_bot")
 BOT_USERNAME = "your_bot_username"
+# Secret for Telegram webhook verification (generate a random string)
+WEBHOOK_SECRET = "your_random_webhook_secret_here"
+# Optional: Secret for admin endpoints (/setup-webhook, /webhook-info)
+# If set, access these endpoints with ?secret=your_admin_secret
+ADMIN_SECRET = "your_admin_secret_here"
 
 # Create KV namespace with: npx wrangler kv:namespace create BUNDLES
 # Then update the id and preview_id below

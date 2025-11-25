@@ -31,7 +31,8 @@ export interface Env {
   __STATIC_CONTENT: KVNamespace // Auto-injected by wrangler for Workers Sites
   BOT_TOKEN: string
   BOT_USERNAME: string
-  WEBHOOK_SECRET?: string
+  WEBHOOK_SECRET: string  // Secret for Telegram webhook verification
+  ADMIN_SECRET?: string   // Optional secret for admin endpoints (/setup-webhook, /webhook-info)
 }
 
 export default {
@@ -39,16 +40,26 @@ export default {
     const url = new URL(request.url)
     const baseUrl = `${url.protocol}//${url.host}`
 
-    // Handle webhook setup
+    // Admin endpoints protection
+    const adminSecret = url.searchParams.get('secret')
+    const isAdminAuthorized = !env.ADMIN_SECRET || adminSecret === env.ADMIN_SECRET
+
+    // Handle webhook setup (protected)
     if (url.pathname === '/setup-webhook') {
+      if (!isAdminAuthorized) {
+        return new Response('Unauthorized', { status: 401 })
+      }
       const api = new TelegramAPI(env.BOT_TOKEN)
       const webhookUrl = `${baseUrl}/webhook`
-      await api.setWebhook(webhookUrl)
+      await api.setWebhook(webhookUrl, env.WEBHOOK_SECRET)
       return new Response(`Webhook set to: ${webhookUrl}`)
     }
 
-    // Handle webhook info
+    // Handle webhook info (protected)
     if (url.pathname === '/webhook-info') {
+      if (!isAdminAuthorized) {
+        return new Response('Unauthorized', { status: 401 })
+      }
       const api = new TelegramAPI(env.BOT_TOKEN)
       const info = await api.getWebhookInfo()
       return new Response(JSON.stringify(info, null, 2), {
@@ -56,8 +67,14 @@ export default {
       })
     }
 
-    // Handle Telegram webhook
+    // Handle Telegram webhook (verified by secret token)
     if (url.pathname === '/webhook' && request.method === 'POST') {
+      // Verify Telegram secret token
+      const secretHeader = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+      if (secretHeader !== env.WEBHOOK_SECRET) {
+        return new Response('Unauthorized', { status: 401 })
+      }
+
       try {
         const update: TelegramUpdate = await request.json()
         await handleUpdate(update, env, baseUrl)

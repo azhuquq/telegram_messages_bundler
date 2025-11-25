@@ -28,8 +28,8 @@ export class TelegramAPI {
     return result.result
   }
 
-  async setWebhook(url: string): Promise<boolean> {
-    return this.request('setWebhook', { url })
+  async setWebhook(url: string, secretToken?: string): Promise<boolean> {
+    return this.request('setWebhook', { url, secret_token: secretToken })
   }
 
   async deleteWebhook(): Promise<boolean> {

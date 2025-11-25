@@ -151,16 +151,20 @@ Note: Telegram webhooks won't work locally unless you use a tunnel like ngrok.
 
 ## Environment Variables
 
-| Variable       | Description                        |
-| -------------- | ---------------------------------- |
-| `BOT_TOKEN`    | Telegram bot token (set as secret) |
-| `BOT_USERNAME` | Bot username without @             |
+| Variable         | Description                                          |
+| ---------------- | ---------------------------------------------------- |
+| `BOT_TOKEN`      | Telegram bot token (set as secret via wrangler)      |
+| `BOT_USERNAME`   | Bot username without @                               |
+| `WEBHOOK_SECRET` | Secret for Telegram webhook verification             |
+| `ADMIN_SECRET`   | (Optional) Secret for admin endpoints                |
 
 ## Security
 
 - **E2E Encryption**: AES-256-GCM encryption with keys only in URLs
 - **Compression**: pako (zlib) compression before encryption
-- **No plaintext storage**: Server stores only encrypted data + metadata (message count, creation date, creator ID)
+- **No plaintext storage**: Server stores only encrypted data + metadata
+- **Webhook Protection**: Telegram sends `X-Telegram-Bot-Api-Secret-Token` header for verification
+- **Admin Endpoints**: `/setup-webhook` and `/webhook-info` require `?secret=ADMIN_SECRET`
 
 ## License
 
