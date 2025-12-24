@@ -67,12 +67,12 @@ export async function handleInlineQuery(
     type: 'article',
     id: `bundle_${bundleId}`,
     title: `Send combined forward (${meta.messageCount} messages)`,
-    description: `${new Date(meta.createdAt).toLocaleDateString()}`,
+    description: `${new Date(meta.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
     input_message_content: {
       message_text:
         `📦 <b>Combined Forward Messages</b>\n\n` +
         `📝 ${meta.messageCount} messages\n\n` +
-        `📅 ${new Date(meta.createdAt).toLocaleDateString()}`,
+        `📅 ${new Date(meta.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
       parse_mode: 'HTML',
     },
     reply_markup: {

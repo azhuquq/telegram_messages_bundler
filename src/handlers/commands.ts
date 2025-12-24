@@ -53,7 +53,7 @@ export async function handleStartCommand(
         await api.sendMessage(chatId,
           `📦 <b>Messages Bundle</b>\n\n` +
           `📝 Messages: ${storedData.meta.messageCount}\n` +
-          `📅 Created: ${new Date(storedData.meta.createdAt).toLocaleDateString()}\n\n` +
+          `📅 Created: ${new Date(storedData.meta.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}\n\n` +
           `Click the button below to view the full content.`,
           {
             parse_mode: 'HTML',
